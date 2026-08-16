@@ -39,29 +39,52 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [role, setRole] = useState("DRIVER");
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/driver", replace: true });
+    void supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.session.user.id)
+          .maybeSingle();
+        const userRole = (profile as any)?.role || "DRIVER";
+        if (userRole === "SHIPPER") navigate({ to: "/shipper", replace: true });
+        else if (userRole === "ADMIN") navigate({ to: "/admin", replace: true });
+        else navigate({ to: "/driver", replace: true });
+      }
     });
   }, [navigate]);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      toast.error("Could not sign in. Please check your email and password.");
+      toast.error(error.message || "Could not sign in. Please check your email and password.");
       return;
     }
-    toast.success("Signed in");
-    navigate({ to: "/driver", replace: true });
+    toast.success("Signed in successfully");
+    
+    // Check role to route properly
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    const userRole = (profile as any)?.role || "DRIVER";
+    if (userRole === "SHIPPER") navigate({ to: "/shipper", replace: true });
+    else if (userRole === "ADMIN") navigate({ to: "/admin", replace: true });
+    else navigate({ to: "/driver", replace: true });
   }
 
   async function signUp(e: React.FormEvent) {
@@ -72,7 +95,13 @@ function AuthPage() {
       password,
       options: {
         emailRedirectTo: window.location.origin,
-        data: { name, phone, role, language: "hinglish" },
+        data: {
+          name,
+          phone,
+          role,
+          company_name: role === "SHIPPER" ? companyName : undefined,
+          language: "hinglish",
+        },
       },
     });
     setLoading(false);
@@ -80,14 +109,36 @@ function AuthPage() {
       toast.error(
         error.message.includes("already")
           ? "This email is already registered. Please sign in."
-          : "Something went wrong. Please try again.",
+          : error.message || "Something went wrong. Please try again.",
       );
       return;
     }
     if (data.session) {
-      navigate({ to: role === "SHIPPER" ? "/shipper" : "/driver", replace: true });
+      toast.success("Account created successfully!");
+      if (role === "SHIPPER") navigate({ to: "/shipper", replace: true });
+      else if (role === "ADMIN") navigate({ to: "/admin", replace: true });
+      else navigate({ to: "/driver", replace: true });
     } else {
       toast.success("Check your email to confirm your account.");
+    }
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email) {
+      toast.error("Please enter your email address.");
+      return;
+    }
+    setResetting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    setResetting(false);
+    if (error) {
+      toast.error(error.message || "Failed to send password reset email.");
+    } else {
+      toast.success("Password reset link sent to your email!");
+      setShowForgot(false);
     }
   }
 
@@ -101,59 +152,101 @@ function AuthPage() {
           TruckLoad <span className="text-primary">AI</span>
         </Link>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <Tabs defaultValue="signin">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign in</TabsTrigger>
-              <TabsTrigger value="signup">Create account</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="signin">
-              <form onSubmit={signIn} className="mt-4 space-y-4">
-                <Field id="si-email" label="Email" type="email" value={email} onChange={setEmail} />
-                <Field
-                  id="si-password"
-                  label="Password"
-                  type="password"
-                  value={password}
-                  onChange={setPassword}
-                />
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : null} Sign in
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          {showForgot ? (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <h2 className="text-lg font-semibold">Reset your password</h2>
+              <p className="text-xs text-muted-foreground">
+                Enter your registered email and we will send you a reset link.
+              </p>
+              <Field id="fp-email" label="Email" type="email" value={email} onChange={setEmail} />
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-1/2"
+                  onClick={() => setShowForgot(false)}
+                >
+                  Back to Sign In
                 </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="signup">
-              <form onSubmit={signUp} className="mt-4 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="role">I am a</Label>
-                  <Select value={role} onValueChange={setRole}>
-                    <SelectTrigger id="role">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="DRIVER">Driver / Truck owner</SelectItem>
-                      <SelectItem value="SHIPPER">Shipper / Business</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Field id="su-name" label="Full name" value={name} onChange={setName} />
-                <Field id="su-phone" label="Phone" value={phone} onChange={setPhone} required={false} />
-                <Field id="su-email" label="Email" type="email" value={email} onChange={setEmail} />
-                <Field
-                  id="su-password"
-                  label="Password"
-                  type="password"
-                  value={password}
-                  onChange={setPassword}
-                />
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : null} Create account
+                <Button type="submit" className="w-1/2" disabled={resetting}>
+                  {resetting ? <Loader2 className="size-4 animate-spin" /> : "Send link"}
                 </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+              </div>
+            </form>
+          ) : (
+            <Tabs defaultValue="signin">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="signin">Sign in</TabsTrigger>
+                <TabsTrigger value="signup">Create account</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="signin">
+                <form onSubmit={signIn} className="mt-4 space-y-4">
+                  <Field id="si-email" label="Email" type="email" value={email} onChange={setEmail} />
+                  <Field
+                    id="si-password"
+                    label="Password"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgot(true)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : null} Sign in
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="signup">
+                <form onSubmit={signUp} className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="role">I am a</Label>
+                    <Select value={role} onValueChange={setRole}>
+                      <SelectTrigger id="role">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="DRIVER">Driver / Truck owner</SelectItem>
+                        <SelectItem value="SHIPPER">Shipper / Business</SelectItem>
+                        <SelectItem value="ADMIN">Operations / Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Field id="su-name" label="Full name" value={name} onChange={setName} />
+                  {role === "SHIPPER" && (
+                    <Field
+                      id="su-company"
+                      label="Company / Business Name"
+                      value={companyName}
+                      onChange={setCompanyName}
+                      required={true}
+                    />
+                  )}
+                  <Field id="su-phone" label="Phone" value={phone} onChange={setPhone} required={false} />
+                  <Field id="su-email" label="Email" type="email" value={email} onChange={setEmail} />
+                  <Field
+                    id="su-password"
+                    label="Password"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                  />
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : null} Create account
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          )}
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">

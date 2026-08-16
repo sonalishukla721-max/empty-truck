@@ -40,19 +40,30 @@ function AdminPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin"],
     queryFn: async () => {
-      const [{ data: trucks }, { data: loads }, { data: bookings }, { data: drivers }, { data: pilot }] =
-        await Promise.all([
-          supabase.from("trucks").select("*"),
-          supabase.from("loads").select("*"),
-          supabase.from("bookings").select("*"),
-          supabase.from("drivers").select("*"),
-          supabase.from("pilot_validation").select("*"),
-        ]);
+      const [
+        { data: trucks },
+        { data: loads },
+        { data: bookings },
+        { data: drivers },
+        { data: shippers },
+        { data: trips },
+        { data: pilot },
+      ] = await Promise.all([
+        supabase.from("trucks").select("*"),
+        supabase.from("loads").select("*"),
+        supabase.from("bookings").select("*, loads(*), drivers(*), trucks(*)"),
+        supabase.from("drivers").select("*"),
+        supabase.from("shippers").select("*"),
+        supabase.from("trips").select("*"),
+        supabase.from("pilot_validation").select("*"),
+      ]);
       return {
         trucks: trucks ?? [],
         loads: loads ?? [],
         bookings: bookings ?? [],
         drivers: drivers ?? [],
+        shippers: shippers ?? [],
+        trips: trips ?? [],
         pilot: pilot ?? [],
       };
     },
@@ -64,54 +75,78 @@ function AdminPage() {
   const matched = data.loads.filter((l) => l.status !== "POSTED").length;
   const gmv = data.bookings.reduce((s, b) => s + Number(b.agreed_rate ?? 0), 0);
   const emptyKm = data.bookings.reduce((s, b) => s + Number(b.empty_km_avoided ?? 0), 0);
+  const completedTrips = data.trips.filter((t) => t.status === "COMPLETED").length;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Operations console</h1>
-        <Badge variant="outline" className="text-warning">
-          SEEDED DEMO DATA
-        </Badge>
+        <div>
+          <h1 className="text-2xl font-semibold">Operations console</h1>
+          <p className="text-sm text-muted-foreground">
+            Live platform metrics, corridor network health & pilot validation.
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Trucks" value={data.trucks.length} />
+        <Stat label="Total Trucks" value={data.trucks.length} />
         <Stat
           label="Empty soon"
           value={data.trucks.filter((t) => t.status === "EMPTY_SOON").length}
           tone="warning"
         />
-        <Stat label="Loads posted" value={data.loads.length} />
-        <Stat label="Loads matched" value={matched} tone="primary" />
+        <Stat label="Loads Posted" value={data.loads.length} />
+        <Stat label="Loads Matched" value={matched} tone="primary" />
         <Stat
-          label="Booking conversion"
-          value={`${data.loads.length ? Math.round((data.bookings.length / data.loads.length) * 100) : 0}%`}
+          label="Total Drivers"
+          value={data.drivers.length}
         />
-        <Stat label="GMV" value={formatINR(gmv)} hint="Demo + pilot" />
-        <Stat label="Platform revenue (2%)" value={formatINR(gmv * 0.02)} hint="Illustrative" />
         <Stat
-          label="Empty KM avoided"
+          label="Total Shippers"
+          value={data.shippers.length}
+        />
+        <Stat label="Completed Trips" value={completedTrips} tone="primary" />
+        <Stat
+          label="Gross Booking Value"
+          value={formatINR(gmv)}
+          hint="Calculated across all return loads"
+        />
+        <Stat label="Platform Revenue (2%)" value={formatINR(gmv * 0.02)} hint="Platform fee" />
+        <Stat
+          label="Empty KM Avoided"
           value={formatKm(emptyKm)}
-          hint={`~${Math.round(emptyKm * IMPACT_ASSUMPTIONS.fuelPerKm)} L fuel estimated`}
+          hint={`~${Math.round(emptyKm * IMPACT_ASSUMPTIONS.fuelPerKm)} L fuel saved`}
+        />
+        <Stat
+          label="Est. CO₂ Avoided"
+          value={`~${Math.round(emptyKm * IMPACT_ASSUMPTIONS.fuelPerKm * IMPACT_ASSUMPTIONS.co2PerLitre)} kg`}
+          hint="Carbon emissions avoided"
+        />
+        <Stat
+          label="Match Rate"
+          value={`${data.loads.length ? Math.round((matched / data.loads.length) * 100) : 0}%`}
+          tone="primary"
         />
       </div>
 
       <Tabs defaultValue="trucks">
-        <TabsList>
-          <TabsTrigger value="trucks">Trucks</TabsTrigger>
-          <TabsTrigger value="loads">Loads</TabsTrigger>
-          <TabsTrigger value="drivers">Drivers & KYC</TabsTrigger>
-          <TabsTrigger value="pilot">Pilot validation</TabsTrigger>
+        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full">
+          <TabsTrigger value="trucks">Trucks ({data.trucks.length})</TabsTrigger>
+          <TabsTrigger value="loads">Loads ({data.loads.length})</TabsTrigger>
+          <TabsTrigger value="bookings">Bookings ({data.bookings.length})</TabsTrigger>
+          <TabsTrigger value="trips">Trips ({data.trips.length})</TabsTrigger>
+          <TabsTrigger value="drivers">Drivers ({data.drivers.length})</TabsTrigger>
+          <TabsTrigger value="shippers">Shippers ({data.shippers.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="trucks" className="mt-4">
           <DataTable
-            head={["Registration", "Type", "Capacity", "Destination", "Status"]}
+            head={["Registration", "Type", "Capacity", "Current / Destination", "Status"]}
             rows={data.trucks.map((t) => [
               t.registration_number,
               t.truck_type,
               `${Number(t.capacity)} T`,
-              t.destination_city ?? "—",
+              `${t.current_city || "—"} → ${t.destination_city ?? "—"}`,
               t.status,
             ])}
           />
@@ -130,32 +165,54 @@ function AdminPage() {
           />
         </TabsContent>
 
+        <TabsContent value="bookings" className="mt-4">
+          <DataTable
+            head={["Load Route", "Truck", "Agreed Rate", "Status", "Empty KM Avoided"]}
+            rows={data.bookings.map((b) => [
+              `${(b.loads as any)?.pickup_location || "—"} → ${(b.loads as any)?.delivery_location || "—"}`,
+              (b.trucks as any)?.registration_number || "—",
+              formatINR(Number(b.agreed_rate ?? 0)),
+              b.status,
+              `${Math.round(Number(b.empty_km_avoided ?? 0))} km`,
+            ])}
+          />
+        </TabsContent>
+
+        <TabsContent value="trips" className="mt-4">
+          <DataTable
+            head={["Route", "Progress", "Status"]}
+            rows={data.trips.map((t) => [
+              `${t.start_location || "—"} → ${t.destination || "—"}`,
+              `${t.progress || 0}%`,
+              t.status,
+            ])}
+          />
+        </TabsContent>
+
         <TabsContent value="drivers" className="mt-4">
           <DataTable
-            head={["Driver", "Trips", "Return loads", "Trust", "KYC"]}
+            head={["Driver", "Phone", "Trips", "Return Loads", "Trust Score", "KYC"]}
             rows={data.drivers.map((d) => [
               d.name,
+              d.phone || "—",
               String(d.completed_trips),
               String(d.return_loads_found),
-              String(d.trust_score),
+              `${d.trust_score} ⭐`,
               d.kyc_status,
             ])}
           />
         </TabsContent>
 
-        <TabsContent value="pilot" className="mt-4">
+        <TabsContent value="shippers" className="mt-4">
           <DataTable
-            head={["Metric", "Value", "Notes"]}
-            rows={data.pilot.map((p) => [
-              p.metric.replaceAll("_", " "),
-              String(Number(p.value)),
-              p.notes ?? "—",
+            head={["Company Name", "Phone", "Trust Score", "Verification"]}
+            rows={data.shippers.map((s) => [
+              s.company_name,
+              s.phone || "—",
+              `${s.trust_score} ⭐`,
+              s.verification_status,
             ])}
           />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Pilot numbers are tracked manually from interviews in the Jabalpur corridor. They are not
-            extrapolated to national figures.
-          </p>
         </TabsContent>
       </Tabs>
     </div>
