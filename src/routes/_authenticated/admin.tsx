@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Stat } from "@/components/Stat";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -14,6 +15,8 @@ import {
 } from "@/components/ui/table";
 import { formatINR, formatKm } from "@/lib/geo";
 import { IMPACT_ASSUMPTIONS } from "@/lib/matching";
+import { toast } from "sonner";
+import { CheckCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -37,6 +40,8 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminPage() {
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery({
     queryKey: ["admin"],
     queryFn: async () => {
@@ -52,8 +57,8 @@ function AdminPage() {
         supabase.from("trucks").select("*"),
         supabase.from("loads").select("*"),
         supabase.from("bookings").select("*, loads(*), drivers(*), trucks(*)"),
-        supabase.from("drivers").select("*"),
-        supabase.from("shippers").select("*"),
+        supabase.from("drivers").select("*").order("created_at", { ascending: false }),
+        supabase.from("shippers").select("*").order("created_at", { ascending: false }),
         supabase.from("trips").select("*"),
         supabase.from("pilot_validation").select("*"),
       ]);
@@ -67,6 +72,30 @@ function AdminPage() {
         pilot: pilot ?? [],
       };
     },
+  });
+
+  const verifyDriver = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("drivers").update({ kyc_status: "VERIFIED" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Driver verified");
+      void queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+    onError: (e: any) => toast.error(e?.message || "Verification failed"),
+  });
+
+  const verifyShipper = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("shippers").update({ verification_status: "VERIFIED" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Shipper verified");
+      void queryClient.invalidateQueries({ queryKey: ["admin"] });
+    },
+    onError: (e: any) => toast.error(e?.message || "Verification failed"),
   });
 
   if (isLoading) return <div className="py-24 text-center text-muted-foreground">Loading…</div>;
@@ -130,13 +159,13 @@ function AdminPage() {
       </div>
 
       <Tabs defaultValue="trucks">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full">
-          <TabsTrigger value="trucks">Trucks ({data.trucks.length})</TabsTrigger>
-          <TabsTrigger value="loads">Loads ({data.loads.length})</TabsTrigger>
-          <TabsTrigger value="bookings">Bookings ({data.bookings.length})</TabsTrigger>
-          <TabsTrigger value="trips">Trips ({data.trips.length})</TabsTrigger>
-          <TabsTrigger value="drivers">Drivers ({data.drivers.length})</TabsTrigger>
-          <TabsTrigger value="shippers">Shippers ({data.shippers.length})</TabsTrigger>
+        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-auto flex-wrap">
+          <TabsTrigger value="trucks" className="py-2">Trucks ({data.trucks.length})</TabsTrigger>
+          <TabsTrigger value="loads" className="py-2">Loads ({data.loads.length})</TabsTrigger>
+          <TabsTrigger value="bookings" className="py-2">Bookings ({data.bookings.length})</TabsTrigger>
+          <TabsTrigger value="trips" className="py-2">Trips ({data.trips.length})</TabsTrigger>
+          <TabsTrigger value="drivers" className="py-2">Drivers ({data.drivers.length})</TabsTrigger>
+          <TabsTrigger value="shippers" className="py-2">Shippers ({data.shippers.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="trucks" className="mt-4">
@@ -147,7 +176,7 @@ function AdminPage() {
               t.truck_type,
               `${Number(t.capacity)} T`,
               `${t.current_city || "—"} → ${t.destination_city ?? "—"}`,
-              t.status,
+              <Badge variant={t.status === "AVAILABLE" ? "default" : "outline"} key={t.id}>{t.status}</Badge>,
             ])}
           />
         </TabsContent>
@@ -160,7 +189,7 @@ function AdminPage() {
               l.cargo_type,
               `${Number(l.weight)} T`,
               formatINR(Number(l.budget)),
-              l.status,
+              <Badge variant={l.status === "POSTED" ? "default" : "outline"} key={l.id}>{l.status}</Badge>,
             ])}
           />
         </TabsContent>
@@ -191,26 +220,36 @@ function AdminPage() {
 
         <TabsContent value="drivers" className="mt-4">
           <DataTable
-            head={["Driver", "Phone", "Trips", "Return Loads", "Trust Score", "KYC"]}
+            head={["Driver", "Phone", "Trips", "Return Loads", "Trust Score", "KYC", "Action"]}
             rows={data.drivers.map((d) => [
               d.name,
               d.phone || "—",
               String(d.completed_trips),
               String(d.return_loads_found),
               `${d.trust_score} ⭐`,
-              d.kyc_status,
+              <Badge variant={d.kyc_status === "VERIFIED" ? "default" : "destructive"} key={d.id + "s"}>{d.kyc_status}</Badge>,
+              d.kyc_status === "PENDING" ? (
+                <Button size="sm" variant="outline" onClick={() => verifyDriver.mutate(d.id)} disabled={verifyDriver.isPending} key={d.id + "b"}>
+                  <CheckCircle className="mr-1 size-3" /> Verify
+                </Button>
+              ) : <span key={d.id + "b"}>—</span>,
             ])}
           />
         </TabsContent>
 
         <TabsContent value="shippers" className="mt-4">
           <DataTable
-            head={["Company Name", "Phone", "Trust Score", "Verification"]}
+            head={["Company Name", "Phone", "Trust Score", "Verification", "Action"]}
             rows={data.shippers.map((s) => [
               s.company_name,
               s.phone || "—",
               `${s.trust_score} ⭐`,
-              s.verification_status,
+              <Badge variant={s.verification_status === "VERIFIED" ? "default" : "destructive"} key={s.id + "s"}>{s.verification_status}</Badge>,
+              s.verification_status === "PENDING" ? (
+                <Button size="sm" variant="outline" onClick={() => verifyShipper.mutate(s.id)} disabled={verifyShipper.isPending} key={s.id + "b"}>
+                  <CheckCircle className="mr-1 size-3" /> Verify
+                </Button>
+              ) : <span key={s.id + "b"}>—</span>,
             ])}
           />
         </TabsContent>
@@ -219,21 +258,21 @@ function AdminPage() {
   );
 }
 
-function DataTable({ head, rows }: { head: string[]; rows: string[][] }) {
+function DataTable({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
             {head.map((h) => (
-              <TableHead key={h}>{h}</TableHead>
+              <TableHead key={h} className="whitespace-nowrap">{h}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={head.length} className="text-center text-muted-foreground">
+              <TableCell colSpan={head.length} className="text-center text-muted-foreground py-8">
                 No records yet.
               </TableCell>
             </TableRow>
@@ -241,7 +280,7 @@ function DataTable({ head, rows }: { head: string[]; rows: string[][] }) {
             rows.map((r, i) => (
               <TableRow key={i}>
                 {r.map((c, j) => (
-                  <TableCell key={j} className="capitalize">
+                  <TableCell key={j} className="whitespace-nowrap">
                     {c}
                   </TableCell>
                 ))}

@@ -1,0 +1,537 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DRIVER
+  SHIPPER
+  ADMIN
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum TruckStatus {
+  AVAILABLE
+  LOADED
+  IN_TRANSIT
+  EMPTY_SOON
+  EMPTY
+  BOOKED
+  OFFLINE
+}
+
+enum LoadStatus {
+  POSTED
+  MATCHED
+  BOOKED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum OpportunityStatus {
+  ACTIVE
+  ACCEPTED
+  EXPIRED
+  REJECTED
+}
+
+enum BookingStatus {
+  REQUESTED
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum TripStatus {
+  BOOKED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  ADVANCE_PAID
+  FINAL_PAYMENT_PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentType {
+  ADVANCE
+  FINAL
+  REFUND
+}
+
+enum NotificationType {
+  EMPTY_TRIP_PREDICTED
+  NEW_MATCH
+  BOOKING_REQUEST
+  BOOKING_CONFIRMED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  TRIP_STARTED
+  LOCATION_UPDATE
+  DELIVERY_COMPLETED
+  KYC_UPDATE
+  SYSTEM
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  isActive     Boolean        @default(true) @map("is_active")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  profile      Profile?
+  userRoles    UserRole[]
+  refreshTokens RefreshToken[]
+  driver       Driver?
+  shipper      Shipper?
+  notifications Notification[]
+  ratingsGiven Rating[]       @relation("RatingsGiven")
+  ratingsReceived Rating[]    @relation("RatingsReceived")
+  pilotValidations PilotValidation[]
+  auditLogs    AuditLog[]
+  paymentsSent Payment[]      @relation("PaymentsSent")
+  paymentsReceived Payment[]  @relation("PaymentsReceived")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Profile {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  fullName  String   @map("full_name")
+  phone     String?
+  email     String
+  avatarUrl String?  @map("avatar_url")
+  role      Role     @default(DRIVER)
+  language  String   @default("en")
+  city      String?
+  state     String?
+  country   String?  @default("India")
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  role   Role
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([role])
+  @@map("user_roles")
+}
+
+model Driver {
+  id               String    @id @default(uuid())
+  userId           String    @unique @map("user_id")
+  name             String
+  phone            String?
+  language         String?   @default("hi")
+  licenseNumber    String?   @map("license_number")
+  licenseDocumentUrl String? @map("license_document_url")
+  truckType        String?   @map("truck_type")
+  capacity         Float?
+  vehicleModel     String?   @map("vehicle_model")
+  fuelType         String?   @default("DIESEL") @map("fuel_type")
+  preferredRoutes  Json?     @default("[]") @map("preferred_routes")
+  currentLat       Float?    @map("current_lat")
+  currentLng       Float?    @map("current_lng")
+  kycStatus        KycStatus @default(PENDING) @map("kyc_status")
+  rating           Float     @default(4.2) @map("trust_score")
+  totalTrips       Int       @default(0) @map("completed_trips")
+  returnLoadsFound Int       @default(0) @map("return_loads_found")
+  totalEarnings    Float     @default(0) @map("additional_income")
+  emptyKmAvoided   Float     @default(0) @map("empty_km_avoided")
+  emergencyContact String?   @map("emergency_contact")
+  isDemo           Boolean   @default(false) @map("is_demo")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trucks           Truck[]
+  bookings         Booking[]
+  trips            Trip[]
+
+  @@map("drivers")
+}
+
+model Shipper {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  companyName        String    @map("company_name")
+  companyType        String?   @map("business_type")
+  gstNumber          String?   @map("gst_number")
+  gstDocumentUrl     String?   @map("gst_document_url")
+  businessAddress    String?   @map("business_address")
+  contactPerson      String?   @map("contact_person")
+  phone              String?
+  kycStatus          KycStatus @default(PENDING) @map("verification_status")
+  rating             Float     @default(4.3) @map("trust_score")
+  totalLoads         Int       @default(0) @map("total_loads")
+  isDemo             Boolean   @default(false) @map("is_demo")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loads              Load[]
+  bookings           Booking[]
+  trips              Trip[]
+
+  @@map("shippers")
+}
+
+model Truck {
+  id                 String      @id @default(uuid())
+  driverId           String      @map("driver_id")
+  registrationNumber String      @unique @map("registration_number")
+  truckType          String      @default("10-Wheeler") @map("truck_type")
+  bodyType           String?     @map("body_type")
+  capacityKg         Float       @default(10000) @map("capacity")
+  length             Float?
+  width              Float?
+  height             Float?
+  vehicleModel       String?     @map("vehicle_model")
+  fuelType           String?     @default("DIESEL") @map("fuel_type")
+  currentLatitude    Float?      @map("current_lat")
+  currentLongitude   Float?      @map("current_lng")
+  currentCity        String?     @map("current_city")
+  currentState       String?     @map("current_state")
+  destinationCity    String?     @map("destination_city")
+  destinationLat     Float?      @map("destination_lat")
+  destinationLng     Float?      @map("destination_lng")
+  destinationState   String?     @map("destination_state")
+  estimatedArrival   DateTime?   @map("estimated_arrival")
+  status             TruckStatus @default(AVAILABLE)
+  availableFrom      DateTime?   @map("available_from")
+  availableUntil     DateTime?   @map("available_until")
+  currentLoadWeight  Float?      @map("current_load_weight")
+  verified           Boolean     @default(false)
+  isDemo             Boolean     @default(false) @map("is_demo")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+  driver             Driver      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  opportunities      ReturnLoadOpportunity[]
+  bookings           Booking[]
+  trips              Trip[]
+  locationUpdates    LocationUpdate[]
+
+  @@index([status])
+  @@index([destinationCity])
+  @@index([currentLatitude, currentLongitude])
+  @@map("trucks")
+}
+
+model Load {
+  id                 String     @id @default(uuid())
+  shipperId          String     @map("shipper_id")
+  pickupAddress      String     @map("pickup_location")
+  pickupCity         String?    @map("pickup_city")
+  pickupState        String?    @map("pickup_state")
+  pickupLatitude     Float      @map("pickup_lat")
+  pickupLongitude    Float      @map("pickup_lng")
+  deliveryAddress    String     @map("delivery_location")
+  deliveryCity       String?    @map("delivery_city")
+  deliveryState      String?    @map("delivery_state")
+  deliveryLatitude   Float      @map("delivery_lat")
+  deliveryLongitude  Float      @map("delivery_lng")
+  cargoType          String     @default("General") @map("cargo_type")
+  cargoDescription   String?    @map("cargo_description")
+  weightKg           Float      @map("weight")
+  truckTypeRequired  String     @default("10-Wheeler") @map("truck_type")
+  price              Float      @map("budget")
+  pickupDate         DateTime   @default(now()) @map("pickup_time")
+  deliveryDate       DateTime?  @map("delivery_date")
+  distanceKm         Float?     @map("distance_km")
+  status             LoadStatus @default(POSTED)
+  isDemo             Boolean    @default(false) @map("is_demo")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  shipper            Shipper    @relation(fields: [shipperId], references: [id], onDelete: Cascade)
+  opportunities      ReturnLoadOpportunity[]
+  bookings           Booking[]
+
+  @@index([status])
+  @@index([pickupCity])
+  @@index([deliveryCity])
+  @@index([pickupLatitude, pickupLongitude])
+  @@map("loads")
+}
+
+model ReturnLoadOpportunity {
+  id                     String            @id @default(uuid())
+  truckId                String            @map("truck_id")
+  loadId                 String            @map("load_id")
+  predictedEmptyAt       DateTime?         @map("predicted_empty_at")
+  predictedEmptyCity     String?           @map("predicted_empty_city")
+  predictedEmptyLatitude Float?            @map("predicted_empty_lat")
+  predictedEmptyLongitude Float?           @map("predicted_empty_lng")
+  distanceFromTruck      Float?            @map("distance_from_truck")
+  routeDeviationKm       Float?            @map("route_deviation_km")
+  compatibilityScore     Float?            @map("compatibility_score")
+  profitabilityScore     Float?            @map("profitability_score")
+  urgencyScore           Float?            @map("urgency_score")
+  overallScore           Float             @map("match_score")
+  routeScore             Float?            @map("route_score")
+  distanceScore          Float?            @map("distance_score")
+  capacityScore          Float?            @map("capacity_score")
+  timingScore            Float?            @map("timing_score")
+  priceScore             Float?            @map("price_score")
+  trustScore             Float?            @map("trust_score")
+  estimatedRevenue       Float?            @map("estimated_earning")
+  estimatedFuelCost      Float?            @map("estimated_fuel_cost")
+  estimatedDriverCost    Float?            @map("estimated_driver_cost")
+  estimatedNetProfit     Float?            @map("estimated_net_profit")
+  estimatedEmptyKmSaved  Float?            @map("empty_km_avoided")
+  estimatedFuelSaved     Float?            @map("estimated_fuel_saved")
+  estimatedCo2Saved      Float?            @map("estimated_co2_avoided")
+  recommendationReason   String?           @map("recommendation_reason")
+  reasons                Json              @default("[]")
+  status                 OpportunityStatus @default(ACTIVE)
+  expiresAt              DateTime?         @map("expires_at")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  truck                  Truck             @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  load                   Load              @relation(fields: [loadId], references: [id], onDelete: Cascade)
+
+  @@index([truckId])
+  @@index([loadId])
+  @@index([overallScore(sort: Desc)])
+  @@index([status])
+  @@map("return_load_opportunities")
+}
+
+model Booking {
+  id                 String        @id @default(uuid())
+  loadId             String        @map("load_id")
+  truckId            String?       @map("truck_id")
+  driverId           String?       @map("driver_id")
+  shipperId          String?       @map("shipper_id")
+  requestedPrice     Float?        @map("requested_price")
+  agreedPrice        Float         @map("agreed_rate")
+  status             BookingStatus @default(REQUESTED)
+  emptyKmAvoided     Float?        @default(0) @map("empty_km_avoided")
+  fuelSaved          Float?        @default(0) @map("fuel_saved")
+  co2Avoided         Float?        @default(0) @map("co2_avoided")
+  requestedAt        DateTime      @default(now()) @map("requested_at")
+  confirmedAt        DateTime?     @map("confirmed_at")
+  cancelledAt        DateTime?     @map("cancelled_at")
+  cancellationReason String?       @map("cancellation_reason")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  load               Load          @relation(fields: [loadId], references: [id])
+  truck              Truck?        @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  driver             Driver?       @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  shipper            Shipper?      @relation(fields: [shipperId], references: [id], onDelete: SetNull)
+  trip               Trip?
+  payments           Payment[]
+  ratings            Rating[]
+
+  @@index([status])
+  @@map("bookings")
+}
+
+model Trip {
+  id                 String     @id @default(uuid())
+  bookingId          String     @unique @map("booking_id")
+  truckId            String     @map("truck_id")
+  driverId           String     @map("driver_id")
+  shipperId          String     @map("shipper_id")
+  startLocation      String?    @map("start_location")
+  pickupLocation     String?    @map("pickup_location")
+  deliveryLocation   String?    @map("destination")
+  startLat           Float?     @map("start_lat")
+  startLng           Float?     @map("start_lng")
+  destinationLat     Float?     @map("destination_lat")
+  destinationLng     Float?     @map("destination_lng")
+  currentLatitude    Float?     @map("current_lat")
+  currentLongitude   Float?     @map("current_lng")
+  distanceKm         Float?     @map("distance_km")
+  progress           Float      @default(0)
+  startedAt          DateTime?  @map("started_at")
+  pickupCompletedAt  DateTime?  @map("pickup_completed_at")
+  estimatedArrival   DateTime?  @map("estimated_arrival")
+  deliveredAt        DateTime?  @map("actual_arrival")
+  status             TripStatus @default(BOOKED)
+  emptyKmSaved       Float?     @map("empty_km_saved")
+  estimatedCO2Saved  Float?     @map("estimated_co2_saved")
+  isDemo             Boolean    @default(false) @map("is_demo")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  booking            Booking    @relation(fields: [bookingId], references: [id])
+  truck              Truck      @relation(fields: [truckId], references: [id])
+  driver             Driver     @relation(fields: [driverId], references: [id])
+  shipper            Shipper    @relation(fields: [shipperId], references: [id])
+  locationUpdates    LocationUpdate[]
+  payments           Payment[]
+  ratings            Rating[]
+  pilotValidations   PilotValidation[]
+
+  @@index([status])
+  @@map("trips")
+}
+
+model LocationUpdate {
+  id        String   @id @default(uuid())
+  tripId    String?  @map("trip_id")
+  truckId   String   @map("truck_id")
+  latitude  Float    @map("lat")
+  longitude Float    @map("lng")
+  speed     Float?
+  heading   Float?
+  timestamp DateTime @default(now())
+  trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  truck     Truck    @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  @@index([truckId])
+  @@index([tripId])
+  @@index([timestamp(sort: Desc)])
+  @@map("location_updates")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  bookingId         String        @map("booking_id")
+  tripId            String?       @map("trip_id")
+  payerId           String        @map("payer_id")
+  receiverId        String        @map("receiver_id")
+  amount            Float
+  platformFee       Float?        @default(0) @map("platform_fee")
+  netAmount         Float?        @map("net_amount")
+  currency          String        @default("INR")
+  razorpayOrderId   String?       @map("razorpay_order_id")
+  razorpayPaymentId String?       @map("razorpay_payment_id")
+  status            PaymentStatus @default(PENDING)
+  paymentType       PaymentType   @default(ADVANCE) @map("payment_type")
+  paidAt            DateTime?     @map("paid_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  booking           Booking       @relation(fields: [bookingId], references: [id])
+  trip              Trip?         @relation(fields: [tripId], references: [id])
+  payer             User          @relation("PaymentsSent", fields: [payerId], references: [id])
+  receiver          User          @relation("PaymentsReceived", fields: [receiverId], references: [id])
+
+  @@index([status])
+  @@map("payments")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType @default(SYSTEM)
+  title     String
+  body      String?
+  message   String?
+  data      Json?
+  link      String?
+  isRead    Boolean          @default(false) @map("read")
+  createdAt DateTime         @default(now()) @map("created_at")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model Rating {
+  id                   String   @id @default(uuid())
+  tripId               String   @map("trip_id")
+  bookingId            String?  @map("booking_id")
+  fromUserId           String   @map("rater_id")
+  toUserId             String?  @map("to_user_id")
+  targetType           String   @map("target_type")
+  rating               Int      @map("stars")
+  review               String?  @map("comment")
+  communication        Int?
+  onTime               Int?     @map("on_time")
+  professionalism      Int?
+  paymentReliability   Int?     @map("payment_reliability")
+  createdAt            DateTime @default(now()) @map("created_at")
+  trip                 Trip     @relation(fields: [tripId], references: [id])
+  booking              Booking? @relation(fields: [bookingId], references: [id])
+  fromUser             User     @relation("RatingsGiven", fields: [fromUserId], references: [id])
+  toUser               User?    @relation("RatingsReceived", fields: [toUserId], references: [id])
+
+  @@unique([tripId, fromUserId])
+  @@map("ratings")
+}
+
+model PilotValidation {
+  id              String   @id @default(uuid())
+  userId          String?  @map("user_id")
+  tripId          String?  @map("trip_id")
+  metric          String
+  value           Float    @default(0)
+  emptyKmBefore   Float?   @map("empty_km_before")
+  emptyKmAfter    Float?   @map("empty_km_after")
+  emptyKmSaved    Float?   @map("empty_km_saved")
+  fuelSaved       Float?   @map("fuel_saved")
+  revenueGenerated Float?  @map("revenue_generated")
+  netProfit       Float?   @map("net_profit")
+  bookingTime     DateTime? @map("booking_time")
+  matchScore      Float?   @map("match_score")
+  userFeedback    String?  @map("user_feedback")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  user            User?    @relation(fields: [userId], references: [id])
+  trip            Trip?    @relation(fields: [tripId], references: [id])
+
+  @@map("pilot_validation")
+}
+
+model PlatformSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity])
+  @@map("audit_logs")
+}

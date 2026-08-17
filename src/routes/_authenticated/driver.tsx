@@ -166,6 +166,31 @@ function DriverDashboard() {
     ) ?? null;
   }, [data, truck]);
 
+  const [isSharingLocation, setIsSharingLocation] = useState(false);
+
+  useEffect(() => {
+    if (!isSharingLocation || !truck?.id || !activeTrip?.id) return;
+    const watchId = navigator.geolocation.watchPosition(
+      async (pos) => {
+        try {
+          await supabase.from("location_updates").insert({
+            truck_id: truck.id,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+        } catch (e) {
+          console.error("Failed to share location:", e);
+        }
+      },
+      () => {
+        toast.error("Location access denied or unavailable.");
+        setIsSharingLocation(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [isSharingLocation, truck?.id, activeTrip?.id]);
+
   const myBookings = useMemo(() => {
     if (!data || !truck) return [];
     return data.bookings.filter((b) => b.truck_id === truck.id || b.driver_id === data.myDriver?.id);
@@ -322,8 +347,19 @@ function DriverDashboard() {
             {data?.myDriver?.trust_score && ` · Trust: ${data.myDriver.trust_score} ⭐`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isDemo && <Badge variant="outline" className="text-warning">DEMO MODE</Badge>}
+          {activeTrip && (
+            <Button
+              variant={isSharingLocation ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsSharingLocation(!isSharingLocation)}
+              className={isSharingLocation ? "bg-emerald-600 hover:bg-emerald-700 gap-1.5" : "gap-1.5"}
+            >
+              <MapPin className="size-4" />
+              {isSharingLocation ? "Sharing Live Location" : "Share Live Location"}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setTruckDialogOpen(true)} className="gap-1.5">
             {truck && !isDemo ? <Edit3 className="size-4" /> : <PlusCircle className="size-4" />}
             {truck && !isDemo ? "Edit Truck" : "Register Truck"}

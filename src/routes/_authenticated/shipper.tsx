@@ -164,7 +164,7 @@ function ShipperDashboard() {
           await supabase.from("notifications").insert({
             user_id: (booking.drivers as any).user_id,
             title: "Booking Accepted!",
-            message: `Shipper accepted your return-load booking for ${(booking.loads as any)?.pickup_location} → ${(booking.loads as any)?.delivery_location}.`,
+            body: `Shipper accepted your return-load booking for ${(booking.loads as any)?.pickup_location} → ${(booking.loads as any)?.delivery_location}.`,
             type: "BOOKING_ACCEPTED",
           });
         }
@@ -175,6 +175,18 @@ function ShipperDashboard() {
       void queryClient.invalidateQueries();
     },
     onError: () => toast.error("Something went wrong. Please try again."),
+  });
+
+  const cancelLoad = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("loads").update({ status: "CANCELLED" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Load cancelled successfully");
+      void queryClient.invalidateQueries();
+    },
+    onError: (e: any) => toast.error(e?.message || "Failed to cancel load"),
   });
 
   if (isLoading) return <div className="py-24 text-center text-muted-foreground">Loading…</div>;
@@ -205,10 +217,11 @@ function ShipperDashboard() {
       </div>
 
       <Tabs defaultValue="requests">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto gap-2 p-1">
           <TabsTrigger value="requests">Booking Requests ({requests.length})</TabsTrigger>
           <TabsTrigger value="loads">My Posted Loads ({myLoads.length})</TabsTrigger>
           <TabsTrigger value="post">Post New Load</TabsTrigger>
+          <TabsTrigger value="trucks">Find Trucks ({data?.trucks.filter(t => t.status === "EMPTY_SOON" || t.status === "AVAILABLE").length || 0})</TabsTrigger>
           <TabsTrigger value="shipments">Active Shipments ({activeShipments.length})</TabsTrigger>
         </TabsList>
 
@@ -236,7 +249,7 @@ function ShipperDashboard() {
                     <p className="text-2xl font-semibold text-primary">{formatINR(Number(b.agreed_rate))}</p>
                   </div>
                 </div>
-                <div className="mt-4 flex gap-2">
+                <div className="mt-4 flex flex-wrap gap-2">
                   <Button
                     onClick={() => decide.mutate({ id: b.id, accept: true })}
                     disabled={decide.isPending}
@@ -285,10 +298,56 @@ function ShipperDashboard() {
                 <div className="flex items-center gap-3">
                   <span className="font-semibold text-lg">{formatINR(Number(l.budget))}</span>
                   <Badge variant={l.status === "POSTED" ? "default" : "outline"}>{l.status}</Badge>
+                  {l.status === "POSTED" && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => cancelLoad.mutate(l.id)}
+                      disabled={cancelLoad.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  )}
                 </div>
               </div>
             ))
           )}
+        </TabsContent>
+
+        {/* Find Trucks Tab */}
+        <TabsContent value="trucks" className="mt-4 space-y-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {data?.trucks
+              .filter((t) => t.status === "EMPTY_SOON" || t.status === "AVAILABLE")
+              .map((truck) => (
+                <div key={truck.id} className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Badge className={truck.status === "AVAILABLE" ? "bg-primary text-primary-foreground" : "bg-warning text-warning-foreground"}>
+                      {truck.status === "AVAILABLE" ? "AVAILABLE NOW" : "EMPTY SOON"}
+                    </Badge>
+                  </div>
+                  <h3 className="font-semibold text-lg">{truck.registration_number}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {truck.truck_type} · {Number(truck.capacity)} Ton
+                  </p>
+                  <div className="pt-2 flex items-center gap-1.5 text-sm">
+                    <MapPin className="size-4 text-muted-foreground" />
+                    <span>
+                      {truck.current_city} → {truck.destination_city || "Any"}
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2"
+                    onClick={() => {
+                      toast.info("Direct truck requests feature coming soon. Post a load and our AI will automatically match and alert these trucks!");
+                    }}
+                  >
+                    Send Direct Request
+                  </Button>
+                </div>
+              ))}
+          </div>
         </TabsContent>
 
         {/* Post Load Form */}

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck,
   Radar,
@@ -8,10 +8,13 @@ import {
   ShieldCheck,
   LogOut,
   Building2,
+  Bell,
+  Check,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/hooks/use-session";
 
@@ -36,12 +39,63 @@ export function AppShell({
   const role = profile?.role ?? "DRIVER";
   const items = NAV.filter((n) => (n.roles as readonly string[]).includes(role));
 
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["notifications", profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return [];
+      const { data } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", profile.id)
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
+    enabled: !!profile?.id,
+  });
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const channel = supabase
+      .channel("user-notifications")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${profile.id}` },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["notifications", profile.id] });
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.id, queryClient]);
+
+  const markAsRead = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from("notifications").update({ read: true }).eq("id", id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", profile?.id] });
+    },
+  });
+
+  const markAllAsRead = useMutation({
+    mutationFn: async () => {
+      await supabase.from("notifications").update({ read: true }).eq("user_id", profile?.id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", profile?.id] });
+    },
+  });
+
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   }
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -70,6 +124,63 @@ export function AppShell({
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">
+            {profile && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="size-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute right-1.5 top-1.5 flex size-2.5 rounded-full bg-destructive" />
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-0">
+                  <div className="flex items-center justify-between border-b border-border p-3">
+                    <h3 className="font-semibold text-sm">Notifications</h3>
+                    {unreadCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-2 py-1 text-xs"
+                        onClick={() => markAllAsRead.mutate()}
+                      >
+                        <Check className="mr-1 size-3" /> Mark all read
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto p-2 space-y-1">
+                    {notifications.length === 0 ? (
+                      <p className="p-4 text-center text-sm text-muted-foreground">No notifications</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={cn(
+                            "rounded-md p-3 text-sm transition-colors",
+                            !n.read ? "bg-primary/5" : "hover:bg-accent"
+                          )}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <p className={cn("font-medium", !n.read && "text-primary")}>{n.title}</p>
+                            {!n.read && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-6 shrink-0"
+                                onClick={() => markAsRead.mutate(n.id)}
+                              >
+                                <Check className="size-3" />
+                              </Button>
+                            )}
+                          </div>
+                          {n.body && <p className="mt-1 text-muted-foreground text-xs">{n.body}</p>}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
             <span className="hidden text-sm text-muted-foreground sm:inline">
               {profile?.name ?? "Account"} · {role}
             </span>

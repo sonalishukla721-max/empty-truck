@@ -45,13 +45,11 @@ export function PaymentDialog({
     try {
       const { error } = await supabase.from("payments").insert({
         booking_id: bookingId,
-        payer_id: payerId,
-        payee_id: payeeId || null,
         amount: totalPayable,
         currency: "INR",
+        payment_type: "ADVANCE",
         status: "SUCCESS",
-        payment_method: method,
-        gateway_payment_id: `pay_${Date.now()}_sim`,
+        razorpay_payment_id: `sim_${method}_${Date.now()}`,
       });
 
       if (error) throw error;

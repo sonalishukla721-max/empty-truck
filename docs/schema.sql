@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS public.trucks (
   capacity NUMERIC NOT NULL DEFAULT 10,
   vehicle_model TEXT,
   fuel_type TEXT DEFAULT 'DIESEL',
+  current_city TEXT,
   current_lat NUMERIC, current_lng NUMERIC,
   destination_city TEXT,
   destination_lat NUMERIC, destination_lng NUMERIC,
@@ -177,6 +178,9 @@ CREATE TABLE IF NOT EXISTS public.trucks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Add missing columns if running on existing DB
+ALTER TABLE public.trucks ADD COLUMN IF NOT EXISTS current_city TEXT;
+ALTER TABLE public.trucks ADD COLUMN IF NOT EXISTS destination_city TEXT;
 GRANT SELECT, INSERT, UPDATE ON public.trucks TO authenticated;
 GRANT SELECT ON public.trucks TO anon;
 GRANT ALL ON public.trucks TO service_role;
@@ -440,6 +444,8 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.trips; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='location_updates') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.location_updates; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='notifications') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications; END IF;
 END $$;
 
 -- ============ DEMO SEED ============

@@ -45,31 +45,73 @@ export function RatingDialog({
     }
     setLoading(true);
     try {
-      // 1. Insert into ratings table
+      // 1. Insert into ratings table (schema: rater_id, stars, target_type)
       const { error: ratingError } = await supabase.from("ratings").insert({
         booking_id: bookingId,
-        from_user_id: fromUserId,
-        to_user_id: toUserId,
-        score,
+        rater_id: fromUserId,
+        stars: score,
+        target_type: targetRole,
         comment: comment.trim() || null,
       });
 
       if (ratingError) throw ratingError;
 
-      // 2. Fetch existing ratings to calculate new average trust score
-      const { data: allRatings } = await supabase
-        .from("ratings")
-        .select("score")
-        .eq("to_user_id", toUserId);
+      // 2. Fetch all ratings for this target to recalculate trust score
+      // We query ratings by target_type and booking's related driver/shipper
+      if (targetRole === "DRIVER") {
+        const { data: driverRec } = await supabase
+          .from("drivers")
+          .select("id, trust_score")
+          .eq("user_id", toUserId)
+          .maybeSingle();
 
-      if (allRatings && allRatings.length > 0) {
-        const total = allRatings.reduce((acc, r) => acc + (r.score || 5), 0);
-        const avg = Math.round((total / allRatings.length) * 10) / 10;
+        if (driverRec) {
+          // Get all ratings for bookings involving this driver
+          const { data: bookingIds } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("driver_id", driverRec.id);
 
-        if (targetRole === "DRIVER") {
-          await supabase.from("drivers").update({ trust_score: avg }).eq("user_id", toUserId);
-        } else {
-          await supabase.from("shippers").update({ trust_score: avg }).eq("user_id", toUserId);
+          if (bookingIds && bookingIds.length > 0) {
+            const { data: allRatings } = await supabase
+              .from("ratings")
+              .select("stars")
+              .in("booking_id", bookingIds.map((b) => b.id))
+              .eq("target_type", "DRIVER");
+
+            if (allRatings && allRatings.length > 0) {
+              const total = allRatings.reduce((acc, r) => acc + (r.stars || 5), 0);
+              const avg = Math.round((total / allRatings.length) * 10) / 10;
+              await supabase.from("drivers").update({ trust_score: avg }).eq("id", driverRec.id);
+            }
+          }
+        }
+      } else {
+        const { data: shipperRec } = await supabase
+          .from("shippers")
+          .select("id, trust_score")
+          .eq("user_id", toUserId)
+          .maybeSingle();
+
+        if (shipperRec) {
+          const { data: bookingIds } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("shipper_id", shipperRec.id);
+
+          if (bookingIds && bookingIds.length > 0) {
+            const { data: allRatings } = await supabase
+              .from("ratings")
+              .select("stars")
+              .in("booking_id", bookingIds.map((b) => b.id))
+              .eq("target_type", "SHIPPER");
+
+            if (allRatings && allRatings.length > 0) {
+              const total = allRatings.reduce((acc, r) => acc + (r.stars || 5), 0);
+              const avg = Math.round((total / allRatings.length) * 10) / 10;
+              await supabase.from("shippers").update({ trust_score: avg }).eq("id", shipperRec.id);
+            }
+          }
         }
       }
 
