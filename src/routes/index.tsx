@@ -24,11 +24,11 @@ export const Route = createFileRoute("/")({
         content:
           "TruckLoad AI predicts when a truck becomes empty and matches it with a return load nearby — more driver income, fewer empty kilometres.",
       },
-      { property: "og:title", content: "TruckLoad AI — turn empty trucks into paid trips" },
+      { property: "og:title", content: "TruckLoad AI — Don't let your truck return empty" },
       {
         property: "og:description",
         content:
-          "AI-assisted return-load matching for Indian trucking. Predict, match, book, track, measure.",
+          "TruckLoad AI predicts when a truck becomes empty and matches it with a return load nearby — more driver income, fewer empty kilometres.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

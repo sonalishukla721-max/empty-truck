@@ -79,14 +79,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "TruckLoad AI — return-load matching for trucks" },
-      { name: "description", content: "AI-powered return-load matching so trucks never travel back empty." },
+      { title: "TruckLoad AI — Don't let your truck return empty" },
+      { name: "description", content: "TruckLoad AI predicts when a truck becomes empty and matches it with a return load nearby — more driver income, fewer empty kilometres." },
       { name: "author", content: "TruckLoad AI" },
-      { property: "og:title", content: "TruckLoad AI" },
-      { property: "og:description", content: "Predict the empty leg. Match the return load. Cut empty kilometres." },
+      { property: "og:title", content: "TruckLoad AI — Don't let your truck return empty" },
+      { property: "og:description", content: "TruckLoad AI predicts when a truck becomes empty and matches it with a return load nearby — more driver income, fewer empty kilometres." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "TruckLoad AI — Don't let your truck return empty" },
+      { name: "twitter:description", content: "TruckLoad AI predicts when a truck becomes empty and matches it with a return load nearby — more driver income, fewer empty kilometres." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4f03c254-50d8-4d07-84cf-8e5598fdd7d0/id-preview-60ab54f2--5bd1e9fe-15c9-4f5f-9c50-d51633148709.lovable.app-1786894746376.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4f03c254-50d8-4d07-84cf-8e5598fdd7d0/id-preview-60ab54f2--5bd1e9fe-15c9-4f5f-9c50-d51633148709.lovable.app-1786894746376.png" },
     ],
     links: [
       {
